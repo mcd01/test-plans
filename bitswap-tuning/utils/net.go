@@ -2,72 +2,60 @@ package utils
 
 import (
 	"context"
-	"fmt"
-	"os"
+	"github.com/testground/sdk-go/network"
 	"strings"
 	"time"
 
 	"github.com/testground/sdk-go/runtime"
-	"github.com/testground/sdk-go/sync"
 )
 
 // SetupNetwork instructs the sidecar (if enabled) to setup the network for this
 // test case.
-func SetupNetwork(ctx context.Context, runenv *runtime.RunEnv, client *sync.Client,
-	nodetp NodeType, tpindex int) (time.Duration, int, error) {
+func SetupNetwork(ctx context.Context, runEnv *runtime.RunEnv, netClient *network.Client,
+	nodeTp NodeType, tpIndex int) (time.Duration, int, error) {
 
-	if !runenv.TestSidecar {
+	if !runEnv.TestSidecar {
 		return 0, 0, nil
 	}
 
+	// instantiate a network client; see 'Traffic shaping' in the docs.
 	// Wait for the network to be initialized.
-	if err := client.WaitNetworkInitialized(ctx, runenv); err != nil {
-		return 0, 0, err
-	}
+	netClient.MustWaitNetworkInitialized(ctx)
 
-	// TODO: just put the unique testplan id inside the runenv?
-	hostname, err := os.Hostname()
+	latency, err := getLatency(runEnv, nodeTp, tpIndex)
 	if err != nil {
 		return 0, 0, err
 	}
 
-	latency, err := getLatency(runenv, nodetp, tpindex)
-	if err != nil {
-		return 0, 0, err
-	}
+	jitterPct := runEnv.IntParam("jitter_pct")
+	bandwidth := runEnv.IntParam("bandwidth_mb")
 
-	jitterPct := runenv.IntParam("jitter_pct")
-	bandwidth := runenv.IntParam("bandwidth_mb")
-
-	cfg := &sync.NetworkConfig{
+	netClient.MustConfigureNetwork(ctx, &network.Config{
 		Network: "default",
 		Enable:  true,
-		Default: sync.LinkShape{
+		// Set the traffic shaping characteristics.
+		Default: network.LinkShape{
 			Latency:   latency,
-			Bandwidth: uint64(bandwidth) * 1024 * 1024,
 			Jitter:    (time.Duration(jitterPct) * latency) / 100,
+			Bandwidth: uint64(bandwidth) * 1024 * 1024,
 		},
-		State: "network-configured",
-	}
+		CallbackState:  "network-configured",
+		CallbackTarget: runEnv.TestInstanceCount,
+	})
 
-	runenv.RecordMessage("%s %d has %s latency (%d%% jitter) and %dMB bandwidth", nodetp, tpindex, latency, jitterPct, bandwidth)
-
-	_, err = client.PublishAndWait(ctx, sync.NetworkTopic(hostname), cfg, "network-configured", runenv.TestInstanceCount)
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to configure network: %w", err)
-	}
+	runEnv.RecordMessage("%s %d has %s latency (%d%% jitter) and %dMB bandwidth", nodeTp, tpIndex, latency, jitterPct, bandwidth)
 
 	return latency, bandwidth, nil
 }
 
 // If there's a latency specific to the node type, overwrite the default latency
-func getLatency(runenv *runtime.RunEnv, nodetp NodeType, tpindex int) (time.Duration, error) {
-	latency := time.Duration(runenv.IntParam("latency_ms")) * time.Millisecond
+func getLatency(runEnv *runtime.RunEnv, nodeTp NodeType, tpIndex int) (time.Duration, error) {
+	latency := time.Duration(runEnv.IntParam("latency_ms")) * time.Millisecond
 	var err error
-	if nodetp == Seed {
-		latency, err = getTypeLatency(runenv, "seed_latency_ms", tpindex, latency)
-	} else if nodetp == Leech {
-		latency, err = getTypeLatency(runenv, "leech_latency_ms", tpindex, latency)
+	if nodeTp == Seed {
+		latency, err = getTypeLatency(runEnv, "seed_latency_ms", tpIndex, latency)
+	} else if nodeTp == Leech {
+		latency, err = getTypeLatency(runEnv, "leech_latency_ms", tpIndex, latency)
 	}
 	if err != nil {
 		return 0, err
@@ -83,26 +71,26 @@ func getLatency(runenv *runtime.RunEnv, nodetp NodeType, tpindex int) (time.Dura
 // - the second seed has 200ms latency
 // - the third seed has 400ms latency
 // - any subsequent seeds have defaultLatency
-func getTypeLatency(runenv *runtime.RunEnv, param string, tpindex int, defaultLatency time.Duration) (time.Duration, error) {
+func getTypeLatency(runEnv *runtime.RunEnv, param string, tpIndex int, defaultLatency time.Duration) (time.Duration, error) {
 	// No type specific latency set, just return the default
-	if !runenv.IsParamSet(param) {
+	if !runEnv.IsParamSet(param) {
 		return defaultLatency, nil
 	}
 
 	// Not a comma-separated list, interpret the value as an int and apply
 	// the same latency to all peers of this type
-	if !strings.Contains(runenv.StringParam(param), ",") {
-		return time.Duration(runenv.IntParam(param)) * time.Millisecond, nil
+	if !strings.Contains(runEnv.StringParam(param), ",") {
+		return time.Duration(runEnv.IntParam(param)) * time.Millisecond, nil
 	}
 
 	// Comma separated list, the position in the list corresponds to the
 	// type index
-	latencies, err := ParseIntArray(runenv.StringParam(param))
+	latencies, err := ParseIntArray(runEnv.StringParam(param))
 	if err != nil {
 		return 0, err
 	}
-	if tpindex < len(latencies) {
-		return time.Duration(latencies[tpindex]) * time.Millisecond, nil
+	if tpIndex < len(latencies) {
+		return time.Duration(latencies[tpIndex]) * time.Millisecond, nil
 	}
 
 	// More peers of this type than entries in the list. Return the default

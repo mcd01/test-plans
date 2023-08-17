@@ -7,14 +7,14 @@ import (
 )
 
 func ParseIntArray(value string) ([]int, error) {
-	var ints []int
-	strs := strings.Split(value, ",")
-	for _, str := range strs {
+	var intValues []int
+	stringValues := strings.Split(value, ",")
+	for _, str := range stringValues {
 		num, err := strconv.ParseInt(str, 10, 32)
 		if err != nil {
-			return nil, fmt.Errorf("Could not convert '%s' to integer(s)", strs)
+			return nil, fmt.Errorf("could not convert '%s' to integer(s)", stringValues)
 		}
-		ints = append(ints, int(num))
+		intValues = append(intValues, int(num))
 	}
-	return ints, nil
+	return intValues, nil
 }

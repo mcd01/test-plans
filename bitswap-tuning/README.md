@@ -1,5 +1,7 @@
 # `Plan:` Bitswap tuning - Combinations of Seeds and Leeches
 
+**Note:** Adapted from the [official test](https://github.com/ipfs/test-plans/tree/master/bitswap-tuning), but modified for our needs.
+
 ![](https://img.shields.io/badge/status-wip-orange.svg?style=flat-square)
 
 Create an environment in which combinations of seeds and leeches are varied. This test is not about content discovery or connectivity, it is assumed that all nodes are connected and that these are executed in an homogeneous network (same CPU, Memory, Bandwidth).

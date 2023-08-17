@@ -6,25 +6,25 @@ import (
 	"strings"
 	"time"
 
-	bs "github.com/ipfs/go-bitswap"
-	bsnet "github.com/ipfs/go-bitswap/network"
-	"github.com/ipfs/go-blockservice"
+	bs "github.com/ipfs/boxo/bitswap"
+	bsnet "github.com/ipfs/boxo/bitswap/network"
+	"github.com/ipfs/boxo/blockservice"
+	"github.com/ipfs/boxo/blockstore"
+	chunker "github.com/ipfs/boxo/chunker"
+	"github.com/ipfs/boxo/files"
+	"github.com/ipfs/boxo/ipld/merkledag"
+	unixfile "github.com/ipfs/boxo/ipld/unixfs/file"
+	"github.com/ipfs/boxo/ipld/unixfs/importer/balanced"
+	"github.com/ipfs/boxo/ipld/unixfs/importer/helpers"
+	"github.com/ipfs/boxo/ipld/unixfs/importer/trickle"
+	nilrouting "github.com/ipfs/boxo/routing/none"
 	"github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
-	delayed "github.com/ipfs/go-datastore/delayed"
-	ds_sync "github.com/ipfs/go-datastore/sync"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	chunker "github.com/ipfs/go-ipfs-chunker"
+	"github.com/ipfs/go-datastore/delayed"
+	dssync "github.com/ipfs/go-datastore/sync"
 	delay "github.com/ipfs/go-ipfs-delay"
-	files "github.com/ipfs/go-ipfs-files"
-	nilrouting "github.com/ipfs/go-ipfs-routing/none"
 	ipld "github.com/ipfs/go-ipld-format"
-	"github.com/ipfs/go-merkledag"
-	unixfile "github.com/ipfs/go-unixfs/file"
-	"github.com/ipfs/go-unixfs/importer/balanced"
-	"github.com/ipfs/go-unixfs/importer/helpers"
-	"github.com/ipfs/go-unixfs/importer/trickle"
-	core "github.com/libp2p/go-libp2p-core"
+	"github.com/libp2p/go-libp2p/core"
 	"github.com/multiformats/go-multihash"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
@@ -33,11 +33,8 @@ import (
 type NodeType int
 
 const (
-	// Seeds data
 	Seed NodeType = iota
-	// Fetches data from seeds
 	Leech
-	// Doesn't seed or fetch data
 	Passive
 )
 
@@ -45,7 +42,7 @@ func (nt NodeType) String() string {
 	return [...]string{"Seed", "Leech", "Passive"}[nt]
 }
 
-// Adapted from the netflix/p2plab repo under an Apache-2 license.
+// Node Adapted from the netflix/p2plab repo under an Apache-2 license.
 // Original source code located at https://github.com/Netflix/p2plab/blob/master/peer/peer.go
 type Node struct {
 	Bitswap *bs.Bitswap
@@ -56,16 +53,16 @@ func (n *Node) Close() error {
 	return n.Bitswap.Close()
 }
 
-func CreateBlockstore(ctx context.Context, bstoreDelay time.Duration) (blockstore.Blockstore, error) {
-	bsdelay := delay.Fixed(bstoreDelay)
-	dstore := ds_sync.MutexWrap(delayed.New(ds.NewMapDatastore(), bsdelay))
+func CreateBlockstore(ctx context.Context, bStoreDelay time.Duration) (blockstore.Blockstore, error) {
+	sDelay := delay.Fixed(bStoreDelay)
+	dstore := dssync.MutexWrap(delayed.New(ds.NewMapDatastore(), sDelay))
 	return blockstore.CachedBlockstore(ctx,
-		blockstore.NewBlockstore(ds_sync.MutexWrap(dstore)),
+		blockstore.NewBlockstore(dssync.MutexWrap(dstore)),
 		blockstore.DefaultCacheOpts())
 }
 
-func ClearBlockstore(ctx context.Context, bstore blockstore.Blockstore) error {
-	ks, err := bstore.AllKeysChan(ctx)
+func ClearBlockstore(ctx context.Context, bStore blockstore.Blockstore) error {
+	ks, err := bStore.AllKeysChan(ctx)
 	if err != nil {
 		return err
 	}
@@ -73,22 +70,22 @@ func ClearBlockstore(ctx context.Context, bstore blockstore.Blockstore) error {
 	for k := range ks {
 		c := k
 		g.Go(func() error {
-			return bstore.DeleteBlock(c)
+			return bStore.DeleteBlock(ctx, c)
 		})
 	}
 	return g.Wait()
 }
 
-func CreateBitswapNode(ctx context.Context, h core.Host, bstore blockstore.Blockstore) (*Node, error) {
+func CreateBitswapNode(ctx context.Context, h core.Host, bStore blockstore.Blockstore) (*Node, error) {
 	routing, err := nilrouting.ConstructNilRouting(ctx, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 	net := bsnet.NewFromIpfsHost(h, routing)
-	bitswap := bs.New(ctx, net, bstore).(*bs.Bitswap)
-	bserv := blockservice.New(bstore, bitswap)
-	dserv := merkledag.NewDAGService(bserv)
-	return &Node{bitswap, dserv}, nil
+	bitswap := bs.New(ctx, net, bStore)
+	bServ := blockservice.New(bStore, bitswap)
+	dServ := merkledag.NewDAGService(bServ)
+	return &Node{bitswap, dServ}, nil
 }
 
 type AddSettings struct {
@@ -101,7 +98,7 @@ type AddSettings struct {
 	MaxLinks  int
 }
 
-func (n *Node) Add(ctx context.Context, r io.Reader) (ipld.Node, error) {
+func (n *Node) Add(_ context.Context, r io.Reader) (ipld.Node, error) {
 	settings := AddSettings{
 		Layout:    "balanced",
 		Chunker:   "size-262144",
@@ -111,12 +108,6 @@ func (n *Node) Add(ctx context.Context, r io.Reader) (ipld.Node, error) {
 		HashFunc:  "sha2-256",
 		MaxLinks:  helpers.DefaultLinksPerBlock,
 	}
-	// for _, opt := range opts {
-	// 	err := opt(&settings)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// }
 
 	prefix, err := merkledag.PrefixForCidVersion(1)
 	if err != nil {
