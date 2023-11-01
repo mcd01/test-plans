@@ -13,21 +13,22 @@ enabled = true
 
 [[testcases]]
 name = "transfer"
-instances = { min = 2, max = 64, default = 2 }
+instances = { min = 2, max = 64, default = 10 }
 
   [testcases.params]
-  run_count = { type = "int", desc = "number of iterations of the test", unit = "iteration", default = 1 }
-  run_timeout_secs = { type = "int", desc = "timeout for an individual run", unit = "seconds", default = 90 }
-  leech_count = { type = "int", desc = "number of leech nodes", unit = "peers", default = 1 }
+  run_count = { type = "int", desc = "number of iterations of the test", unit = "iteration", default = 20 }
+  run_timeout_secs = { type = "int", desc = "timeout for an individual run", unit = "seconds", default = 600 }
+  leech_count = { type = "int", desc = "number of leech nodes", unit = "peers", default = 2 }
   passive_count = { type = "int", desc = "number of passive nodes (neither leech nor seed)", unit = "peers", default = 0 }
-  timeout_secs = { type = "int", desc = "timeout", unit = "seconds", default = 300 }
+  timeout_secs = { type = "int", desc = "timeout", unit = "seconds", default = 3600 }
   bstore_delay_ms = { type = "int", desc = "blockstore get / put delay", unit = "milliseconds", default = 5 }
-  request_stagger = { type = "int", desc = "time between each leech's first request", unit = "ms", default = 0}
   file_size = { type = "int", desc = "file size", unit = "bytes", default = 4194304 }
   latency_ms = { type = "int", desc = "latency", unit = "ms", default = 5 }
   jitter_pct = { type = "int", desc = "jitter as percentage of latency", unit = "%", default = 10 }
   bandwidth_mb = { type = "int", desc = "bandwidth", unit = "Mib", default = 1024 }
   parallel_gen_mb = { type = "int", desc = "maximum allowed size of seed data to generate in parallel", unit = "Mib", default = 100 }
+  validation_enabled = { type = "bool", desc = "validation enabled", unit = "bool", default = true }
+  validation_algorithm = { type = "string", desc = "validation algorithm", unit = "type", default = "constant" }
 
 #[[testcases]]
 #name = "fuzz"

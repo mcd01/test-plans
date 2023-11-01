@@ -148,7 +148,7 @@ func getRootCidTopic(id int) *sync.Topic {
 }
 
 func emitMetrics(runEnv *runtime.RunEnv, bsNode *utils.Node, runNum int, seq int64, grpSeq int64,
-	latency time.Duration, bandwidthMB int, fileSize int, nodeTp utils.NodeType, tpIndex int, timeToFetch time.Duration) error {
+	latency time.Duration, bandwidthMB int, fileSize int, nodeTp utils.NodeType, tpIndex int, timeToFetch time.Duration, timeToValidate time.Duration) error {
 
 	stats, err := bsNode.Bitswap.Stat()
 	if err != nil {
@@ -160,6 +160,7 @@ func emitMetrics(runEnv *runtime.RunEnv, bsNode *utils.Node, runNum int, seq int
 		latencyMS, bandwidthMB, runNum, seq, runEnv.TestGroupID, grpSeq, fileSize, nodeTp, tpIndex)
 	if nodeTp == utils.Leech {
 		runEnv.R().RecordPoint(fmt.Sprintf("%s/name:time_to_fetch", id), float64(timeToFetch))
+		runEnv.R().RecordPoint(fmt.Sprintf("%s/name:time_to_validate", id), float64(timeToValidate))
 	}
 
 	runEnv.R().RecordPoint(fmt.Sprintf("%s/name:msgs_rcvd", id), float64(stats.MessagesReceived))

@@ -289,7 +289,7 @@ func Fuzz(runEnv *runtime.RunEnv) error {
 		rootCid := rootCid
 		g.Go(func() error {
 			// Stagger the start of the fetch
-			startDelay := time.Duration(rnd.Intn(50*runEnv.TestInstanceCount)) * time.Millisecond
+			startDelay := time.Duration(rnd.Intn(10)) * time.Millisecond
 			time.Sleep(startDelay)
 
 			cidStr := rootCid.String()

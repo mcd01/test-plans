@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/testground/sdk-go/network"
+	"math/rand"
 	"time"
 
 	"github.com/ipfs/boxo/blockstore"
@@ -29,9 +30,10 @@ func Transfer(runEnv *runtime.RunEnv) error {
 	runTimeout := time.Duration(runEnv.IntParam("run_timeout_secs")) * time.Second
 	leechCount := runEnv.IntParam("leech_count")
 	passiveCount := runEnv.IntParam("passive_count")
-	requestStagger := time.Duration(runEnv.IntParam("request_stagger")) * time.Millisecond
 	bStoreDelay := time.Duration(runEnv.IntParam("bstore_delay_ms")) * time.Millisecond
 	runCount := runEnv.IntParam("run_count")
+	validationAlgorithm := runEnv.StringParam("validation_algorithm")
+	validationEnabled := runEnv.BooleanParam("validation_enabled")
 	fileSizes, err := utils.ParseIntArray(runEnv.StringParam("file_size"))
 	if err != nil {
 		return err
@@ -41,6 +43,7 @@ func Transfer(runEnv *runtime.RunEnv) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 	client := sync.MustBoundClient(ctx, runEnv)
 	netClient := network.NewClient(client, runEnv)
 
@@ -274,10 +277,10 @@ func Transfer(runEnv *runtime.RunEnv) error {
 			/// --- Start test
 
 			var timeToFetch time.Duration
+			var timeToValidate time.Duration
 			if nodeTp == utils.Leech {
 				// Stagger the start of the first request from each leech
-				// Note: seq starts from 1 (not 0)
-				startDelay := time.Duration(seq-1) * requestStagger
+				startDelay := time.Duration(rnd.Intn(10)) * time.Millisecond
 				time.Sleep(startDelay)
 
 				runEnv.RecordMessage("Leech fetching data after %s delay", startDelay)
@@ -288,6 +291,11 @@ func Transfer(runEnv *runtime.RunEnv) error {
 					return fmt.Errorf("error fetching data through Bitswap: %w", err)
 				}
 				runEnv.RecordMessage("Leech fetch complete (%s)", timeToFetch)
+				timeToValidate, err = utils.ValidateData(ctx, client, runID, validationEnabled, validationAlgorithm, sizeIndex)
+				if err != nil {
+					return err
+				}
+				runEnv.RecordMessage("Data validation complete (%s)", timeToValidate)
 			}
 
 			// Wait for all leeches to have downloaded the data from seeds
@@ -297,7 +305,7 @@ func Transfer(runEnv *runtime.RunEnv) error {
 			}
 
 			/// --- Report stats
-			err = emitMetrics(runEnv, bsNode, runNum, seq, grpSeq, latency, bandwidthMB, fileSize, nodeTp, tpIndex, timeToFetch)
+			err = emitMetrics(runEnv, bsNode, runNum, seq, grpSeq, latency, bandwidthMB, fileSize, nodeTp, tpIndex, timeToFetch, timeToValidate)
 			if err != nil {
 				return err
 			}
